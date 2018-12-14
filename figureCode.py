@@ -1,4 +1,7 @@
+import matplotlib as mpl
+mpl.use('TkAgg')
 import matplotlib.pyplot as plt
+
 import os
 from collections import defaultdict
 import subprocess
@@ -7,6 +10,7 @@ import pickle
 from plumbum import local
 import random
 from fractions import Fraction
+import pandas as pd
 
 def readByteObjectFromDefinedDirectory(directory):
     f = open(directory, 'rb')
@@ -283,6 +287,131 @@ def figure2RawSeqs():
     # we should debug to here
     debug = 'to here'
     return
+
+def figure2_afterMED_from_notebook():
+    # read in the list that contains the DIVs that were used to create the ITS2 types.
+    # These will be coloured in the plot.
+    with open('/Users/humebc/Google_drive/projects/SymPortal/SymPortalMS/figures/fig3/significantSeqs.txt', 'r') as f:
+        significant_seqs_fasta_list = [line.rstrip() for line in f]
+
+    significant_seqs_list = []
+    for line in significant_seqs_fasta_list:
+        if line.startswith('>'):
+            significant_seqs_list.append(line[1:])
+
+    # we will use a SymPortal output to make the graph
+    # this will save us a lot of time.
+    # we will import this as a pandas dataframe
+
+    plotting_data_df = pd.read_csv('/Users/humebc/Google_drive/projects/SymPortal/SymPortalMS/mol_ecol_res/sp_output_101218/seqs.absolute.txt', sep='\t', lineterminator='\n', header=0, index_col=0)
+
+    # In order to be able to drop the DIV row at the end and the meta information rows, we should
+    # drop all rows that are after the DIV column. We will pass in an index value to the .drop
+    # that is called here. To do this we need to work out which index we are working with
+    index_values_as_list = plotting_data_df.index.values.tolist()
+    for i in range(-1, -(len(index_values_as_list)), -1):
+        if index_values_as_list[i].startswith('DIV'):
+            # then this is the index (in negative notation) that we need to cut from
+            meta_index_to_cut_from = i
+            break
+
+    # now lets drop the QC columns from the SP output df and also drop the clade summation columns
+    # we will be left with just clumns for each one of the sequences found in the samples
+
+    # we need to drop the rows first before we can make the smp_id_to_smp_name_dict else
+    # we will have the final row names in the index which are not convertable to int
+
+    plotting_data_df.drop(index=plotting_data_df.index[range(meta_index_to_cut_from, 0, 1)], inplace=True)
+
+    plotting_data_df = plotting_data_df.set_index('sample_name')
+
+
+
+    plotting_data_df.drop(columns=['noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
+                               'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
+                               'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                               'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
+                               'post_taxa_id_absolute_non_symbiodinium_seqs',
+                               'post_taxa_id_unique_non_symbiodinium_seqs',
+                               'size_screening_violation_absolute', 'size_screening_violation_unique',
+                               'post_med_absolute', 'post_med_unique'
+                               ], inplace=True)
+
+    plotting_data_df = plotting_data_df.astype('float')
+
+
+
+    # now change the order of the index of the df according to the predefined order (same as raw plot)
+    # read in the sample list genreated previousy
+    with open('/Users/humebc/Google_drive/projects/SymPortal/SymPortalMS/figures/fig3/sample_order.txt') as f:
+        sample_order_list = [line.rstrip() for line in f]
+
+    plotting_data_df = plotting_data_df.reindex(sample_order_list)
+
+
+    # we also need to drop the colums that are not clade C seqs
+    index_to_drop = []
+    for seq_name in list(plotting_data_df):
+        if 'C' not in seq_name:
+            index_to_drop.append(plotting_data_df.columns.get_loc(seq_name))
+
+    plotting_data_df.drop(plotting_data_df.columns[index_to_drop], axis=1, inplace=True)
+
+    # finally we need to normalise each of the seq abundances to the total seq abundances found in each sample
+    # i.e. divide each cell by the sum of its row
+    plotting_data_df = plotting_data_df.div(plotting_data_df.sum(axis=1), axis=0)
+
+    # we can directly use the plotting_data_df for plotting
+    # we will go column by column when plotting
+    # therefore at this stage we have all of the info we need.
+    # we just need to work out which of the sub bars should be coloured and what colour they should be
+
+    # Colour palettes
+    colourPalette = ['#E8AB52', '#5FA96E', '#9680D3', '#D8C542', '#D47070', '#59A6D4', '#D76FBC', '#F6724C',
+                     '#5FC2B6', '#80D1E4', '#6BD78A', '#B7D456']
+    greyPalette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+
+    # create a seq to colour dictionary that we can use when plotting
+    seq_to_colour_dict = {}
+    colour_counter = 0
+    grey_counter = 0
+
+    # for each sequence
+    for sequence_to_plot in list(plotting_data_df):
+        if sequence_to_plot in significant_seqs_list:
+            seq_to_colour_dict[sequence_to_plot] = colourPalette[colour_counter]
+            colour_counter += 1
+        else:
+            seq_to_colour_dict[sequence_to_plot] = greyPalette[grey_counter % 6]
+            grey_counter += 1
+
+    # print out the colour dict
+    for col_pal in colourPalette:
+        for seq, col_dict in seq_to_colour_dict.items():
+            if col_dict == col_pal:
+                print('{}: {}'.format(col_pal, seq))
+                break
+    # we are now ready to plot
+    plt.figure(num=1, figsize=(8, 10), dpi=80)
+    ax = plt.subplot(1, 1, 1)
+    ax.set_ylim(bottom=0, top=1)
+
+    ind = range(len(sample_order_list))
+    width = 1
+
+    # The bottom for each sequence plot will be updated each time we plot
+    bottom = [0 for smpl in sample_order_list]
+
+    ordered_seq_list = list(plotting_data_df)
+    for i in range(len(ordered_seq_list)):
+        seq_name_in_Q = ordered_seq_list[i]
+        # print('Plotting seq {} out of {}'.format(i, len(ordered_seq_list)))
+        ax.bar(ind, plotting_data_df[seq_name_in_Q], width, bottom=bottom, color=seq_to_colour_dict[seq_name_in_Q])
+        bottom = [L + M for L, M in zip(bottom, plotting_data_df[seq_name_in_Q])]
+
+    # Here we should have it plotted and we'll just need to put the finishing touches to it.
+    plt.savefig("/Users/humebc/Google_drive/projects/SymPortal/SymPortalMS/figure_code/fig_3_colour_141218.svg")
+    plt.show()
 
 def figure2_afterMED():
     apples = 'aser'
@@ -1753,4 +1882,4 @@ class virtual_ITS2_type_profile():
 
 
 
-fig3_fixed_types()
+figure2_afterMED_from_notebook()
