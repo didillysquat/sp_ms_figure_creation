@@ -1880,6 +1880,62 @@ class virtual_ITS2_type_profile():
         return relAbundTups
 
 
+def generate_supp_fig_1_for_sp_ms():
+    """ This will generate the supp_fig_1 for the ms"""
+    # This code will be used to start to investigate some database stats.
+    # Firstly I will look for some light, high end stats for the PS MS i.e. number of samples, studies types etc.
+    # I think it would also be nice to have a look at the frequency distribution of the types
+    # I think that there is probably a very citable paper to be had from SP with regards to looking more deeply
+    # at the data
 
+    # get the lastest dataAnalysis
+    latest_data_analysis_object = DataAnalysis.objects.get(id=44)
+    how_many_data_sets = len(latest_data_analysis_object.list_of_data_set_uids.split(','))
+    clade_collection_objects = list(latest_data_analysis_object.get_clade_collections())
+    samples_of_clade_collections = list(DataSetSample.objects.filter(cladecollection__in=clade_collection_objects).distinct())
+    # list of analysisTypes
+    analysis_types_from_data_analysis_object = AnalysisType.objects.filter(data_analysis_from=latest_data_analysis_object)
+
+    num_of_clade_col_types_associated_to_analysis_types = len(CladeCollectionType.objects.filter(analysis_type_of__in=analysis_types_from_data_analysis_object))
+
+    analysis_type_abundance_list = []
+    total_clade_col_types_counter = 0
+    for analysis_type in analysis_types_from_data_analysis_object:
+        analysis_type_abundance_list.append((analysis_type.name, len(CladeCollectionType.objects.filter(analysis_type_of=analysis_type))))
+
+    sorted_analysis_type_abundance_list = sorted(analysis_type_abundance_list, key=lambda x: x[1], reverse=True)
+
+    sorted_for_plotting = []
+    count = 0
+    for sat in sorted_analysis_type_abundance_list:
+        total_clade_col_types_counter += sat[1]
+        cum_value = total_clade_col_types_counter/num_of_clade_col_types_associated_to_analysis_types
+        sorted_for_plotting.append((sat[0],cum_value))
+        count += 1
+        if cum_value > .5:
+            print('cumulative_value=' + str(count))
+
+    x_cumulative = range(len(sorted_for_plotting))
+    y_cumulative = [a[1] for a in sorted_for_plotting]
+
+    fig, ax1 = plt.subplots()
+    ax1.scatter(x_cumulative, y_cumulative, c='black', marker='.')
+    ax1.set_ylabel("Cumulative relative abundance as proportion\nof total ITS2 type profile instances")
+    ax1.set_xlabel("Rank abundance of ITS2 type profiles")
+
+    ax2 = ax1.twinx()
+
+    # plt.scatter(x_cumulative, y_cumulative, c='black', marker='.')
+
+    x_abs = range(len(sorted_analysis_type_abundance_list))
+    y_abs = [x[1] for x in sorted_analysis_type_abundance_list]
+
+    ax2.scatter(x_abs, y_abs, c='blue', marker='.')
+    ax2.set_ylabel("Number of samples containing the ITS2 type profile")
+    ax1.spines['right'].set_color('blue')
+    # plt.scatter(x_abs, y_abs, c='blue', marker='.')
+    fig.show()
+    plt.savefig('supp_fig1.svg')
+    plt.savefig('supp_fig1.png')
 
 figure2_afterMED_from_notebook()
